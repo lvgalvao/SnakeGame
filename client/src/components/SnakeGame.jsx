@@ -4,8 +4,8 @@ import { api } from '../api.js';
 const GRID = 20;
 const CELL = 20;
 const TICK_MS = 130;
+const FOOD_TTL = 10_000; // ms before food expires
 
-// #7 — fixed: uses Set to avoid infinite loop when grid is full
 function randomFood(snake) {
   const occupied = new Set(snake.map((p) => `${p.x},${p.y}`));
   const free = [];
@@ -26,9 +26,21 @@ function initialState() {
     snake,
     dir: { x: 1, y: 0 },
     food: randomFood(snake),
+    foodPlacedAt: Date.now(),
     score: 0,
     over: false,
   };
+}
+
+// Returns [r, g, b] interpolated from red→orange→yellow as ratio goes 0→1
+function foodColor(ratio) {
+  if (ratio < 0.6) return [255, 68, 68];
+  if (ratio < 0.85) {
+    const t = (ratio - 0.6) / 0.25;
+    return [255, Math.round(68 + t * (165 - 68)), 0];
+  }
+  const t = (ratio - 0.85) / 0.15;
+  return [255, Math.round(165 + t * (255 - 165)), 0];
 }
 
 export default function SnakeGame() {
@@ -43,6 +55,14 @@ export default function SnakeGame() {
   function tick() {
     const s = stateRef.current;
     if (s.over) return;
+
+    // Food expired — move it to a new position
+    if (s.food && Date.now() - s.foodPlacedAt >= FOOD_TTL) {
+      s.food = randomFood(s.snake);
+      s.foodPlacedAt = Date.now();
+      forceRender((v) => v + 1);
+      return;
+    }
 
     if (dirQueueRef.current.length > 0) {
       const next = dirQueueRef.current.shift();
@@ -62,8 +82,8 @@ export default function SnakeGame() {
     if (head.x === s.food?.x && head.y === s.food?.y) {
       s.score += 1;
       const next = randomFood(s.snake);
-      if (!next) { s.over = true; } // grid full — victory
-      else s.food = next;
+      if (!next) { s.over = true; }
+      else { s.food = next; s.foodPlacedAt = Date.now(); }
     } else {
       s.snake.pop();
     }
@@ -87,11 +107,21 @@ export default function SnakeGame() {
     }
 
     if (s.food) {
-      ctx.shadowColor = '#ff4444';
-      ctx.shadowBlur = 12;
-      ctx.fillStyle = '#ff4444';
-      ctx.fillRect(s.food.x * CELL + 3, s.food.y * CELL + 3, CELL - 6, CELL - 6);
-      ctx.shadowBlur = 0;
+      const elapsed = Date.now() - s.foodPlacedAt;
+      const ratio = Math.min(elapsed / FOOD_TTL, 1);
+      const [r, g, b] = foodColor(ratio);
+      const color = `rgb(${r},${g},${b})`;
+
+      // Blink in last 2 seconds
+      const blink = ratio > 0.8 && Math.floor(Date.now() / 250) % 2 === 0;
+
+      if (!blink) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = color;
+        ctx.fillRect(s.food.x * CELL + 3, s.food.y * CELL + 3, CELL - 6, CELL - 6);
+        ctx.shadowBlur = 0;
+      }
     }
 
     const len = s.snake.length;
@@ -139,11 +169,13 @@ export default function SnakeGame() {
       if (next) { e.preventDefault(); dirQueueRef.current.push(next); }
     }
 
-    // #8 — pause timer when tab is hidden
     function onVisibility() {
       if (document.hidden) {
         clearInterval(intervalRef.current);
       } else {
+        // Shift foodPlacedAt forward by the time spent hidden
+        const s = stateRef.current;
+        if (s.food) s.foodPlacedAt = Date.now() - Math.min(Date.now() - s.foodPlacedAt, FOOD_TTL - 500);
         intervalRef.current = setInterval(tick, TICK_MS);
       }
     }
@@ -159,8 +191,13 @@ export default function SnakeGame() {
     };
   }, []);
 
-  // Redraws whenever React re-renders (driven by forceRender in tick)
-  useEffect(() => { draw(); });
+  // Continuous redraw loop for smooth food color/blink animation
+  useEffect(() => {
+    let rafId;
+    function loop() { draw(); rafId = requestAnimationFrame(loop); }
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
 
   function reset() {
     stateRef.current = initialState();
@@ -200,7 +237,6 @@ export default function SnakeGame() {
                 maxLength={32}
                 placeholder="Your name"
               />
-              {/* #9 — disabled when score is 0 */}
               <button
                 onClick={save}
                 disabled={s.score === 0 || saveStatus === 'saving' || saveStatus === 'saved'}

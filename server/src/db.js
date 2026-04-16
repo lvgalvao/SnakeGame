@@ -1,18 +1,20 @@
-const path = require('path');
-const Database = require('better-sqlite3');
+const { Pool } = require('pg');
 
-const dbPath = path.join(__dirname, '..', 'data.sqlite');
-const db = new Database(dbPath);
+const pool = new Pool({
+  connectionString: process.env.DATABASE,
+  ssl: { rejectUnauthorized: false },
+});
 
-db.pragma('journal_mode = WAL');
-
-db.exec(`
+pool.query(`
   CREATE TABLE IF NOT EXISTS scores (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    player_name TEXT NOT NULL,
-    score INTEGER NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-`);
+    id        SERIAL PRIMARY KEY,
+    player_name TEXT    NOT NULL,
+    score       INTEGER NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )
+`).catch((err) => {
+  console.error('DB init failed:', err.message);
+  process.exit(1);
+});
 
-module.exports = db;
+module.exports = pool;
