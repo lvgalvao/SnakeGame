@@ -11,8 +11,9 @@ router.get('/', async (req, res) => {
       'SELECT id, player_name, score, created_at FROM scores ORDER BY score DESC, created_at ASC LIMIT 50'
     );
     res.json(rows);
-  } catch {
-    res.status(500).json({ error: 'database error' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'database error', detail: err.message });
   }
 });
 
@@ -32,8 +33,9 @@ router.post('/', async (req, res) => {
       [name, Math.floor(numeric)]
     );
     res.status(201).json(rows[0]);
-  } catch {
-    res.status(500).json({ error: 'database error' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'database error', detail: err.message });
   }
 });
 
@@ -44,8 +46,9 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     const { rowCount } = await pool.query('DELETE FROM scores WHERE id = $1', [id]);
     if (rowCount === 0) return res.status(404).json({ error: 'not found' });
     res.status(204).end();
-  } catch {
-    res.status(500).json({ error: 'database error' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: 'database error', detail: err.message });
   }
 });
 
